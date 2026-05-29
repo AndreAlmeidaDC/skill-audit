@@ -1,0 +1,88 @@
+---
+name: skill-audit
+description: Static and procedural audit of imported or downloaded Agent Skills. Use when reviewing a skill directory, SKILL.md file, bundled scripts, references, templates, dependencies, prompt-injection risk, malicious code risk, secrets exposure, supply-chain risk, excessive agency, quality, efficiency, efficacy, or governance before importing or using a skill.
+license: MIT
+---
+
+# Skill Audit
+
+Use this skill to review an Agent Skill before importing, trusting, modifying, or executing it. Treat every external skill as a third-party software package that can influence agent behavior, tool use, data access, and code execution.
+
+## Safety Rule
+
+Never execute scripts, commands, installers, or downloaded artifacts from an untrusted skill before static inspection. Audit first, then decide whether sandboxed execution is acceptable.
+
+## Workflow
+
+1. Identify the skill target.
+   - If the user provides a directory, audit that directory.
+   - If the user provides a single `SKILL.md`, inspect the parent directory when available.
+   - If the user provides a repository or archive, fetch or unpack it into a temporary review directory, then audit the extracted skill.
+
+2. Run the static audit script.
+
+   ```bash
+   python /home/ubuntu/skills/skill-audit/scripts/audit_skill.py /path/to/skill --json /tmp/skill-audit.json --markdown /tmp/skill-audit.md
+   ```
+
+   Use `--strict` when the task requires a CI-style pass/fail check:
+
+   ```bash
+   python /home/ubuntu/skills/skill-audit/scripts/audit_skill.py /path/to/skill --strict
+   ```
+
+3. Inspect the generated findings.
+   - Prioritize `CRITICAL` and `HIGH` findings first.
+   - Treat `MEDIUM` findings as blockers for production or sensitive-data use unless remediated.
+   - Treat `LOW` and `INFO` findings as maintainability, governance, or review guidance.
+
+4. Perform manual review for context.
+   - Read `SKILL.md` frontmatter, description, and workflow.
+   - Inspect every file under `scripts/` before execution.
+   - Inspect `references/`, `templates/`, and docs for hidden prompts, stale assumptions, secrets, or unsafe instructions.
+   - Verify whether requested permissions match the task's real needs.
+
+5. Decide import status.
+   - `Approved`: low-risk, clear source, minimal permissions, no high-risk findings.
+   - `Restricted`: usable only in sandbox or with reduced permissions.
+   - `Quarantine`: requires remediation, owner review, or dependency verification.
+   - `Rejected`: contains malicious instructions, exfiltration, real secrets, destructive commands, or unreviewable code.
+
+6. Deliver an audit summary.
+   - Include risk rating, top findings, required fixes, safe execution conditions, and whether human approval is required.
+   - Attach the Markdown audit report when available.
+
+## What the Script Checks
+
+The bundled script performs a non-executing static review. It checks structure, frontmatter, description specificity, skill size, workflow presence, validation guidance, safety guardrails, scripts, references, templates, secrets, dangerous commands, remote execution, network egress, sensitive file access, unpinned dependencies, obfuscation, and excessive agency indicators.
+
+## When to Load References
+
+Read `references/risk-taxonomy.md` when the user asks for deeper explanation of risk categories, severity, or why a finding matters.
+
+Read `references/reviewer-guide.md` when deciding whether to approve, restrict, quarantine, or reject a skill after the static audit.
+
+## Output Standard
+
+Use this structure for final answers:
+
+```markdown
+## Skill Audit Summary
+
+The skill is classified as **[risk rating]** risk.
+
+| Area | Result |
+|---|---|
+| Import decision | [approved / restricted / quarantine / rejected] |
+| Critical findings | [count and short summary] |
+| High findings | [count and short summary] |
+| Main risks | [risk themes] |
+| Required fixes | [fixes] |
+| Safe execution conditions | [sandbox, no network, no sensitive data, etc.] |
+
+[Plain-language explanation and next steps.]
+```
+
+## Remediation Principles
+
+Prefer removing dangerous behavior over documenting it. Prefer least privilege over broad access. Prefer pinned dependencies over mutable installs. Prefer local deterministic checks over remote execution. Require human approval for irreversible, public, financial, credentialed, or production-impacting actions.
