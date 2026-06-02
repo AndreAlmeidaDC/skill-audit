@@ -124,6 +124,12 @@ Created by **André Almeida**.
 [2]: https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/ "OWASP Top 10 for Agentic Applications 2026"
 [3]: https://snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub/ "Snyk: ToxicSkills: Exposing hidden risks in AI agent skills"
 
+## Verificação de versão com consentimento
+
+Esta skill foi padronizada para operar como uma skill atualizável com consentimento humano. No início de um uso relevante, quando houver internet e ferramentas Git ou HTTP disponíveis, o agente deve consultar o repositório de origem, ler o `README.md` e o `CHANGELOG.md` quando existirem, comparar a cópia local com a versão upstream e resumir as novidades encontradas.
+
+Essa checagem não autoriza autoatualização silenciosa. A regra é: **verificar, explicar e perguntar**. O agente deve informar o que mudou, dizer se a mudança impacta a tarefa atual e pedir autorização explícita antes de atualizar qualquer arquivo local da skill. O protocolo completo está em [`references/version-check.md`](references/version-check.md).
+
 ## Change History
 
 | Date and Time | Change | Reason |
