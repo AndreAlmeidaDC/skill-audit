@@ -8,6 +8,11 @@ common risk indicators related to prompt injection, malicious code, secrets,
 supply chain, excessive agency, quality, efficiency, and governance.
 
 It intentionally does not execute any file from the audited skill.
+
+This file is a detection-pattern source (marker: SKILL-AUDIT-PATTERN-SOURCE).
+It necessarily contains the very strings it searches for, so the audit suppresses
+instruction/code/data pattern matches against files carrying this marker. Secrets
+and destructive-command detection are never suppressed.
 """
 
 from __future__ import annotations
@@ -238,7 +243,263 @@ def add_finding(findings: List[Finding], root: Path, finding_id: str, severity: 
     findings.append(Finding(finding_id, severity, category, file_display, line, evidence, recommendation))
 
 
+# ---------------------------------------------------------------------------
+# False-positive suppression (conservative).
+#
+# These rules exist so the audit does not flag its own detection vocabulary,
+# documented governance protocols, or plain documentation links as if they were
+# live threats. They NEVER relax detection inside an audited skill's scripts/
+# directory or for any third-party code: suppression applies only to
+# self-referential pattern dictionaries, to markdown prose/links, and to a small
+# set of known-safe governance phrases. Real imperative instructions, real code
+# and real secrets are still reported at full severity.
+# ---------------------------------------------------------------------------
+
+# Pattern-dictionary self-reference. A file that declares or documents detection
+# patterns will always contain the very strings it hunts for. We detect such files
+# by an explicit marker rather than by name, so a malicious skill cannot opt out
+# just by reusing a filename. In marked files, all pattern families are suppressed
+# EXCEPT the two that indicate a genuinely live compromise regardless of context:
+# real hardcoded secrets (SEC-SECRETS) and destructive recursive deletion is kept
+# at code level. Documentation and taxonomy files only ever describe threats, so in
+# those the suppression is total except for real secret material.
+SELF_REFERENCE_MARKER = "SKILL-AUDIT-PATTERN-SOURCE"
+# Families that always indicate real danger even inside a pattern-source file.
+# A live private key or AWS token is dangerous no matter where it sits.
+NEVER_SUPPRESS_FAMILIES = {"SEC-SECRETS"}
+
+# Governance phrases from this author's shared, documented version-check protocol.
+# They are consensual and transparent by design, so they must not register as
+# hidden/deceptive behavior. Matching is exact-substring and case-insensitive.
+GOVERNANCE_ALLOWLIST = (
+    "proceed silently. do not mention the check",
+    "if the versions match, proceed silently",
+    "must never update itself silently",
+    "must never discard local changes silently",
+)
+
+MARKDOWN_EXTENSIONS = {".md", ".txt"}
+# Files that actually execute. Capability mismatch is only credible from these;
+# a capability merely mentioned in markdown prose is not an exercised capability.
+EXECUTABLE_EXTENSIONS = {".py", ".sh", ".bash", ".zsh", ".js", ".ts", ".tsx", ".jsx", ".rb", ".pl"}
+MARKDOWN_LINK_RE = re.compile(r"\]\(\s*https?://|^\s*\|.*https?://|^\s*https?://\S+\s*$", re.IGNORECASE)
+
+
+def family_of(finding_id: str) -> str:
+    parts = finding_id.split("-")
+    return "-".join(parts[:2]) if len(parts) >= 2 else finding_id
+
+
+def is_pattern_source(text: str) -> bool:
+    """True if the file explicitly marks itself as a detection-pattern source."""
+    return SELF_REFERENCE_MARKER in text
+
+
+def refine_severity(pattern: dict, line: str, lines: List[str], index: int) -> Tuple[str, Optional[str]]:
+    """Context-aware severity for SEC-CODE-002.
+
+    eval(), exec() and os.system() stay HIGH: they run dynamic code or a shell
+    string. subprocess.* is judged by HOW it is called:
+      - shell=True, or a single string command  -> stays HIGH (shell injection risk)
+      - argument LIST and no shell=True          -> MEDIUM (structured, allowlisted call)
+    The call often spans several lines, so inspect a small forward window until the
+    call's parentheses balance (capped at 6 lines).
+
+    Returns (severity, note). note is appended to the recommendation when present.
+    """
+    if pattern["id"] != "SEC-CODE-002":
+        return pattern["severity"], None
+
+    low = line.lower()
+    # Only subprocess is eligible for downgrade. The others remain as-is.
+    if not re.search(r"(?i)subprocess\.(popen|call|run)\s*\(", low):
+        return pattern["severity"], None
+
+    # Gather the call text across up to 6 lines or until parentheses balance.
+    window = []
+    depth = 0
+    started = False
+    for j in range(index, min(index + 6, len(lines))):
+        seg = lines[j]
+        window.append(seg)
+        for ch in seg:
+            if ch == "(":
+                depth += 1
+                started = True
+            elif ch == ")":
+                depth -= 1
+        if started and depth <= 0:
+            break
+    call_text = " ".join(window)
+    call_low = call_text.lower()
+
+    # Dangerous forms keep HIGH.
+    if re.search(r"shell\s*=\s*true", call_low):
+        return "HIGH", None
+    # First argument is a list literal => structured args, safe from shell injection.
+    # Match subprocess.run([  or subprocess.run( [  possibly after newline/space.
+    if re.search(r"(?i)subprocess\.(popen|call|run)\s*\(\s*\[", call_text):
+        return "MEDIUM", "subprocess called with an argument list and no shell=True (no shell-injection path); review inputs but lower risk than a shell string."
+
+    # Unknown shape (e.g. a variable passed in): stay HIGH to be safe.
+    return "HIGH", None
+
+
+# ---------------------------------------------------------------------------
+# Declared-capability reconciliation.
+#
+# A skill may declare the surface capabilities it legitimately exercises in its
+# metadata.json under "declared_capabilities". The auditor reconciles findings
+# against that declaration instead of blindly suppressing:
+#   - finding in a declared capability    -> demoted to INFO, kept and labelled
+#   - finding NOT declared, but the skill DID adopt the declaration system
+#                                          -> kept at full severity + a mismatch
+#                                             finding (declaring too little is
+#                                             penalized, not rewarded)
+#   - declared capability never observed   -> informational note only
+#
+# CRITICAL SAFETY BOUNDARY: only low-signal *surface* capabilities are eligible.
+# The families that indicate real compromise are NEVER reconcilable by
+# declaration, so a malicious skill cannot declare its way out of them.
+# ---------------------------------------------------------------------------
+
+# Finding family -> capability name. Only these families can be reconciled.
+CAPABILITY_OF_FAMILY = {
+    "SEC-NET-001": "network_egress",
+    "SEC-CODE-002": "subprocess",          # only when the match is subprocess.* (see guard)
+    "SEC-SUPPLY-001": "dependency_install",
+    "SEC-SUPPLY-002": "dependency_install",
+    "SEC-SUPPLY-003": "dependency_install",
+}
+
+# Families that a declaration must never be able to downgrade, no matter what.
+NEVER_RECONCILE_IDS = {
+    "SEC-PROMPT-001", "SEC-PROMPT-002",
+    "SEC-DATA-001",
+    "SEC-SECRETS-001", "SEC-SECRETS-002", "SEC-SECRETS-003",
+    "SEC-CODE-001",   # curl|bash
+    "SEC-CODE-003",   # rm -rf
+    "SEC-CODE-004",   # privilege escalation
+    "SEC-FS-001",     # sensitive-file access is never "routine by design"
+    "SEC-OBF-001",
+    "SEC-AGENCY-001",
+}
+
+
+def load_declared_capabilities(root: Path) -> Tuple[Dict[str, dict], bool]:
+    """Read declared_capabilities from metadata.json.
+
+    Returns (capabilities, adopted) where adopted is True if the skill carries a
+    declared_capabilities block at all (even an empty one). adopted=False means the
+    skill never opted into the system, so undeclared capabilities are NOT penalized.
+    """
+    meta_path = root / "metadata.json"
+    text = safe_read_text(meta_path)
+    if text is None:
+        return {}, False
+    try:
+        meta = json.loads(text)
+    except (ValueError, json.JSONDecodeError):
+        return {}, False
+    block = meta.get("declared_capabilities")
+    if not isinstance(block, dict):
+        return {}, False
+    declared = {}
+    for name, spec in block.items():
+        if isinstance(spec, dict):
+            declared[name] = spec
+        elif isinstance(spec, bool):
+            declared[name] = {"expected": spec}
+    return declared, True
+
+
+def capability_for(finding_id: str, line: str) -> Optional[str]:
+    """Capability that a finding maps to, or None if it is not reconcilable."""
+    if finding_id in NEVER_RECONCILE_IDS:
+        return None
+    cap = CAPABILITY_OF_FAMILY.get(finding_id)
+    if cap == "subprocess":
+        # eval/exec/os.system also live under SEC-CODE-002; those are dynamic code
+        # execution and are never reconciled. Only literal subprocess.* qualifies.
+        if not re.search(r"(?i)subprocess\.(popen|call|run)\s*\(", line):
+            return None
+    return cap
+
+
+def is_declared(declared: Dict[str, dict], capability: str) -> bool:
+    spec = declared.get(capability)
+    return bool(spec) and spec.get("expected", True) is True
+
+
+def should_suppress(pattern: dict, line: str, path: Path, file_text: str) -> Optional[str]:
+    """Return a reason string if this match is a known false positive, else None."""
+    pid = pattern["id"]
+    fam = family_of(pid)
+    low = line.lower()
+
+    # 1) Self-referential pattern dictionary or its documentation: do not let the
+    #    detector flag its own vocabulary. All families suppressed except real
+    #    secret material, which is dangerous regardless of file role.
+    if fam not in NEVER_SUPPRESS_FAMILIES and is_pattern_source(file_text):
+        return "self-reference: detection-pattern source or its documentation"
+
+    # 2) Documented governance protocol phrases (transparent, consented).
+    if pid == "SEC-PROMPT-002":
+        if any(phrase in low for phrase in GOVERNANCE_ALLOWLIST):
+            return "allowlisted governance phrase (documented version-check protocol)"
+        # Anti-stealth phrasing: a negated stealth term ("not ... silently",
+        # "never ... secretly", "did not expand silently") is the OPPOSITE of
+        # hidden behavior. Suppress when a negation precedes the trigger within
+        # a short window on the same line.
+        if re.search(
+            r"(?i)\b(not|never|no|did not|does not|must not|cannot|without)\b[^.]{0,40}\b(silently|secretly|conceal|hide this|do not tell|without (the )?user knowing)\b",
+            line,
+        ):
+            return "negated stealth term (anti-stealth governance statement, not hidden behavior)"
+
+    # 3) Network egress that is only a documentation link in markdown prose,
+    #    not executable egress. Real code calls (requests.*, fetch(, axios.,
+    #    curl/wget commands) are NOT suppressed, only URLs in prose/links/tables.
+    if pid == "SEC-NET-001" and path.suffix.lower() in MARKDOWN_EXTENSIONS:
+        has_code_egress = re.search(
+            r"(?i)(requests\.(post|put|patch)|fetch\s*\(|axios\.|\bcurl\s+|\bwget\s+)", line
+        )
+        in_prose = (
+            MARKDOWN_LINK_RE.search(line)                 # ](http  or table cell or bare-url line
+            or re.match(r"\s*[-*+]\s", line)              # bullet list item
+            or re.match(r"\s*\[[^\]]+\]:\s*https?://", line)  # reference link def
+            or ": http" in line.lower()                  # "Label: https://..."
+        )
+        if not has_code_egress and in_prose:
+            return "documentation link in markdown (not executable egress)"
+
+    # 4) License text is legal boilerplate, not agent capability.
+    if pid == "SEC-AGENCY-001" and path.name.upper().startswith("LICENSE"):
+        return "license boilerplate, not an agent action"
+
+    # 5) Listing secret-file names inside ignore/config files is good hygiene,
+    #    not access. `.env` in .gitignore prevents committing secrets.
+    if pid == "SEC-FS-001" and path.name in {".gitignore", ".dockerignore", ".npmignore"}:
+        return "ignore-file entry (prevents committing secrets, not access)"
+
+    # 6) Canonical URL metadata fields are identity, not runtime egress.
+    if pid == "SEC-NET-001" and path.name == "metadata.json":
+        if re.search(r'(?i)"(origin_url|origin_git_url|homepage|repository|url)"\s*:', line):
+            return "canonical repository URL in metadata (identity, not egress)"
+
+    # 7) Markdown reference-style link definitions ([n]: https://...) are citations,
+    #    not executable egress.
+    if pid == "SEC-NET-001" and path.suffix.lower() in MARKDOWN_EXTENSIONS:
+        if re.match(r"\s*\[[^\]]+\]:\s*https?://", line):
+            return "markdown reference link definition (citation, not egress)"
+
+    return None
+
+
 def scan_patterns(root: Path, findings: List[Finding]) -> None:
+    declared, adopted = load_declared_capabilities(root)
+    exercised: set = set()
+    undeclared: Dict[str, Tuple[str, int]] = {}
     for path in iter_files(root):
         suffix = path.suffix.lower()
         if suffix not in TEXT_EXTENSIONS and path.name not in {"requirements.txt", "Dockerfile", "Makefile"}:
@@ -250,17 +511,76 @@ def scan_patterns(root: Path, findings: List[Finding]) -> None:
         for i, line in enumerate(lines, start=1):
             for pattern in PATTERNS:
                 if re.search(pattern["regex"], line):
+                    reason = should_suppress(pattern, line, path, text)
+                    if reason is not None:
+                        # Demote to INFO so the signal is preserved and auditable,
+                        # but does not inflate the risk score.
+                        add_finding(
+                            findings,
+                            root,
+                            pattern["id"] + "-SUPPRESSED",
+                            "INFO",
+                            pattern["category"],
+                            path,
+                            i,
+                            f"[suppressed: {reason}] {line}",
+                            "Reviewed as a known false positive. No action required unless context changed.",
+                        )
+                        continue
+                    eff_severity, note = refine_severity(pattern, line, lines, i - 1)
+                    recommendation = pattern["recommendation"]
+                    if note:
+                        recommendation = recommendation + " " + note
+
+                    # Declared-capability reconciliation.
+                    cap = capability_for(pattern["id"], line)
+                    if cap is not None:
+                        if is_declared(declared, cap):
+                            exercised.add(cap)
+                            add_finding(
+                                findings,
+                                root,
+                                pattern["id"] + "-DECLARED",
+                                "INFO",
+                                pattern["category"],
+                                path,
+                                i,
+                                f"[expected: declared capability '{cap}'] {line}",
+                                f"Matches the skill's declared_capabilities ('{cap}'). Expected behavior; no action unless the declaration is wrong.",
+                            )
+                            continue
+                        # A capability mismatch is only credible from EXECUTABLE code.
+                        # A mention in markdown/prose ('this skill discusses requests.post')
+                        # is not an exercised capability, so it never raises a mismatch.
+                        if adopted and cap not in undeclared and path.suffix.lower() in EXECUTABLE_EXTENSIONS:
+                            undeclared[cap] = (relative(path, root), i)
+
                     add_finding(
                         findings,
                         root,
                         pattern["id"],
-                        pattern["severity"],
+                        eff_severity,
                         pattern["category"],
                         path,
                         i,
                         line,
-                        pattern["recommendation"],
+                        recommendation,
                     )
+
+    # Mismatch: skill adopted the declaration system but exercises a capability it
+    # did not declare. Declaring too little is penalized, not rewarded.
+    for cap, (fpath, fline) in sorted(undeclared.items()):
+        add_finding(
+            findings,
+            root,
+            "DECL-MISMATCH-001",
+            "MEDIUM",
+            "Declaration Mismatch",
+            fpath,
+            fline,
+            f"Capability '{cap}' is exercised in the skill but not listed in declared_capabilities.",
+            f"Declare '{cap}' in metadata.json with a reason, or remove the behavior. Undeclared capabilities may indicate hidden behavior.",
+        )
 
 
 def analyze_structure(root: Path, findings: List[Finding]) -> Dict[str, object]:

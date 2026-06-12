@@ -68,6 +68,26 @@ Never execute scripts, commands, installers, or downloaded artifacts from an unt
 
 The bundled script performs a non-executing static review. It checks structure, frontmatter, description specificity, skill size, workflow presence, validation guidance, safety guardrails, scripts, references, templates, secrets, dangerous commands, remote execution, network egress, sensitive file access, unpinned dependencies, obfuscation, and excessive agency indicators.
 
+## Declared Capabilities
+
+A skill may declare the surface capabilities it legitimately exercises in `metadata.json` under `declared_capabilities`. The supported keys are `network_egress`, `subprocess` and `dependency_install`, each an object with `expected` (boolean) and a short `reason`. Example:
+
+```json
+"declared_capabilities": {
+  "network_egress": { "expected": true, "reason": "Fetches the target website under audit" },
+  "subprocess": { "expected": false, "reason": "No shelling out" },
+  "dependency_install": { "expected": false, "reason": "Standard library only" }
+}
+```
+
+The audit reconciles findings against this declaration instead of suppressing blindly:
+
+- A finding inside a declared capability is demoted to INFO and labelled `expected: declared capability`. It stays visible and auditable.
+- If the skill adopts the declaration block but exercises a capability it did not declare, the audit raises `DECL-MISMATCH-001`. Declaring too little is penalized, not rewarded.
+- A declared capability that is never observed produces no penalty.
+
+This only applies to low-signal surface capabilities. Declaration can never downgrade the families that indicate real compromise: prompt injection, data exfiltration, hardcoded secrets, piping remote content into a shell, recursive deletion, privilege escalation, sensitive-file access, obfuscation, and excessive agency. A malicious skill cannot declare its way out of those.
+
 ## When to Load References
 
 Read `references/risk-taxonomy.md` when the user asks for deeper explanation of risk categories, severity, or why a finding matters.

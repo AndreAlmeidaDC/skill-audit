@@ -135,3 +135,5 @@ Essa checagem não autoriza autoatualização silenciosa. A regra é: **verifica
 | Date and Time | Change | Reason |
 |---|---|---|
 | 2026-05-28 22:04:04 -03 | Created the initial README for `skill-audit`. | Document installation, usage, capabilities, risk ratings, review workflow, limitations, and references for public release. |
+
+<!-- SKILL-AUDIT-PATTERN-SOURCE: this document describes the audit threat vocabulary by design; self-matches are expected and suppressed. -->

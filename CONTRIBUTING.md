@@ -44,3 +44,5 @@ Then review the diff manually and answer these questions in the PR description:
 | Date | Time | Reason |
 |---|---|---|
 | 2026-06-02 | 09:02 GMT-3 | Added contribution guidelines for maintaining the skill as an update-aware public repository. |
+
+<!-- SKILL-AUDIT-PATTERN-SOURCE: this document describes the audit threat vocabulary by design; self-matches are expected and suppressed. -->

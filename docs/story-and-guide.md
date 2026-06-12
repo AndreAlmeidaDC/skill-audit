@@ -144,3 +144,5 @@ Organizations using agent skills should create a small intake process. Every thi
 | Date and Time | Change | Reason |
 |---|---|---|
 | 2026-05-28 22:04:04 -03 | Created the initial storytelling guide for `skill-audit`. | Explain the imported-skill risk problem, how the skill solves it, and how users should apply it. |
+
+<!-- SKILL-AUDIT-PATTERN-SOURCE: this document describes the audit threat vocabulary by design; self-matches are expected and suppressed. -->

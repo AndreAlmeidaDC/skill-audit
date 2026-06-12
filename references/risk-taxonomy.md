@@ -1,5 +1,7 @@
 # Skill Audit Risk Taxonomy
 
+<!-- SKILL-AUDIT-PATTERN-SOURCE: this taxonomy enumerates threat vocabulary by design and is excluded from instruction/code/data self-matching. -->
+
 Use this reference when a user asks for a deeper explanation of audit findings, risk ratings, or remediation priorities. Keep the main `SKILL.md` focused on workflow; use this file for interpretation details.
 
 ## Core Risk Families

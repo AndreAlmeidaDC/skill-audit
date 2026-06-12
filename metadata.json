@@ -2,14 +2,28 @@
   "name": "skill-audit",
   "title": "Skill Audit",
   "description": "Skill para auditoria estática e procedimental de Agent Skills.",
-  "version": "2026.06.10",
+  "version": "2026.06.11",
   "maturity": "stable",
   "origin_url": "https://github.com/AndreAlmeidaDC/skill-audit",
   "origin_git_url": "https://github.com/AndreAlmeidaDC/skill-audit.git",
   "default_branch": "main",
   "author": "André Almeida",
   "license": "MIT",
-  "last_standardized_at": "2026-06-10 19:15 GMT-3",
+  "declared_capabilities": {
+    "network_egress": {
+      "expected": false,
+      "reason": "Static, non-executing audit; reads local files only. The optional upstream version check is documented and consent-gated, not active runtime egress."
+    },
+    "subprocess": {
+      "expected": false,
+      "reason": "The audit script never executes audited skill code or shells out."
+    },
+    "dependency_install": {
+      "expected": false,
+      "reason": "Standard-library only; installs nothing."
+    }
+  },
+  "last_standardized_at": "2026-06-11 GMT-3",
   "required_files": [
     "SKILL.md",
     "README.md",

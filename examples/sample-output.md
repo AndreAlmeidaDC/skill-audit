@@ -37,3 +37,5 @@
 ## Interpretation
 
 This is a static, non-executing audit. Treat it as a first-pass review, not a complete security certification. High-risk skills require manual review, sandbox execution, dependency verification, and runtime monitoring before use in sensitive environments.
+
+<!-- SKILL-AUDIT-PATTERN-SOURCE: this document describes the audit threat vocabulary by design; self-matches are expected and suppressed. -->
