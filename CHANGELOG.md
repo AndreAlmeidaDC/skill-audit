@@ -1,9 +1,8 @@
 # Changelog
 
-All notable changes to this skill are documented here. This file is the preferred human-readable source for update checks.
-
-| Date | Time | Version | Changes |
-|---|---|---|---|
-| 2026-06-11 | 12:00 GMT-3 | 2026.06.11 | Reduced false positives with conservative suppression (self-reference markers, anti-stealth negation, markdown links, license, ignore-files, canonical URL metadata), context-aware subprocess severity (arg-list vs shell=True), and a declared-capabilities reconciliation engine with mismatch detection. Critical families can never be downgraded by declaration. |
-| 2026-06-10 | 19:15 GMT-3 | 2026.06.10 | Synced shared version check protocol to v2: version source priority, HTTP and API check methods that work without Git, session cooldown rule, generalized regression-free update rule. |
-| 2026-06-02 | 09:02 GMT-3 | 2026.06.02 | Standardized the repository as an update-aware skill: added origin version check protocol, metadata, governance, contribution guidelines and local validation requirements. |
+| Date | Version | Changes |
+|---|---|---|
+| 2026-09-02 | 2026.09.02 | Rebuilt the auditor around an untrusted-target model. Removed package-controlled suppression and capability-based severity downgrades; added package-integrity, Unicode, AST, dependency, GitHub Actions, capability-diff and attack-chain analysis; added external expiring suppressions, SARIF, sandbox plans, regression tests and CI. |
+| 2026-06-11 | 2026.06.11 | Added declared-capability reconciliation and false-positive handling. Superseded because target-controlled declarations and markers could affect severity. |
+| 2026-06-10 | 2026.06.10 | Synced shared version-check protocol. |
+| 2026-06-02 | 2026.06.02 | Initial standardized public package. |
