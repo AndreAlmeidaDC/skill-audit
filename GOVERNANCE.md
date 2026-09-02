@@ -1,47 +1,27 @@
 # Governance
 
-This repository is maintained as an update-aware Agent Skill by **André Almeida**.
+## Scope
 
-## Maintenance model
+This repository provides a static and procedural review pipeline for Agent Skills. It does not certify safety and does not automatically execute audited packages.
 
-The skill is public and reusable, but changes should be treated as changes to agent behavior. The maintainer decides what enters the default branch and when a change should be released, tagged or documented as breaking.
+## Decision ownership
 
-## Consent and self-update policy
+- The scanner produces evidence and a provisional risk rating.
+- A human or independent security owner approves privileged import or dynamic testing.
+- Production, financial, credentialed and public actions remain outside automatic approval.
 
-The skill may instruct an agent to check the upstream repository before meaningful use. That check is informational until the user approves an update.
+## Change control
 
-The following actions require explicit user consent:
+Changes to detection, severity, suppression, capability mapping, attack chains or sandbox policy require regression tests and pull-request review.
 
-| Action | Consent required? |
-|---|---:|
-| Reading upstream README/CHANGELOG | No, if public and task-relevant. |
-| Comparing local and upstream versions | No, if non-destructive. |
-| Summarizing available changes | No. |
-| Pulling, copying or overwriting local skill files | Yes. |
-| Discarding local edits | Yes, and should normally be avoided. |
-| Changing the user's target project because of a skill update | Yes, as a separate action. |
+## Suppression governance
 
-## Versioning
+Suppressions live outside the audited target, identify an approver and reason, expire, remain visible, and cannot apply to critical findings.
 
-Use `CHANGELOG.md` as the human-readable source of release notes. Use Git tags when a version should be cited, installed or compared by other agents.
+## Update policy
 
-Recommended version labels:
+The skill may check its canonical public repository for a newer version. It never executes remote update code, self-updates silently or overwrites local changes without consent.
 
-| Label | Meaning |
-|---|---|
-| `draft` | Experimental and not recommended for broad reuse. |
-| `beta` | Usable, but behavior may still change frequently. |
-| `stable` | Suitable for recurring use. |
-| `archived` | Preserved for history, not actively recommended. |
+## Author
 
-## Breaking changes
-
-A change is breaking when it changes activation conditions, non-negotiable rules, user-consent behavior, required artifacts, output format, safety boundaries or update behavior in a way that may surprise existing users.
-
-Breaking changes should be called out in `CHANGELOG.md` and, when appropriate, released with a new tag.
-
-## Change history
-
-| Date | Time | Reason |
-|---|---|---|
-| 2026-06-02 | 09:02 GMT-3 | Added governance rules for update-aware skill maintenance, explicit consent and release discipline. |
+André Almeida
