@@ -47,7 +47,7 @@ COMPILED = [(a, b, c, re.compile(d), e) for a, b, c, d, e in PATTERNS]
 
 def iter_paths(root: Path) -> Iterable[Path]:
     for current, dirs, files in os.walk(root, followlinks=False):
-        dirs[:] = [d for d in dis if d not in SKIP_DIRS]
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         base = Path(current)
         for name in dirs + files:
             yield base / name
@@ -132,7 +132,7 @@ def validate_structure(root: Path, findings: list[Finding]) -> dict[str, Any]:
             if len(description) > 1024:
                 add(findings, root, "ROUTING-DESCRIPTION-LONG", "MEDIUM", "Routing", skill, 1,
                     f"Description length: {len(description)}", "Keep description at or below 1024 characters.")
-            if not re.search(r"(?i)\b(use when|use for|when the user|trigger|audit|review|build|create|analy[szZe)\b", description):
+            if not re.search(r"(?i)\b(use when|use for|when the user|trigger|audit|review|build|create|analy[sz]e)\b", description):
                 add(findings, root, "ROUTING-TRIGGER-MISSING", "MEDIUM", "Routing", skill, 1,
                     description, "Add explicit activation language.")
             if not re.search(r"(?i)\b(do not use|not for|exclude|when not|avoid when)\b", body):
@@ -221,7 +221,7 @@ def scan_zip(root: Path, path: Path, findings: list[Finding]) -> None:
 
 def scan_tar(root: Path, path: Path, findings: list[Finding]) -> None:
     try:
-        with tarfile.open(path, ":*") as archive:
+        with tarfile.open(path, "r:*") as archive:
             for item in archive.getmembers():
                 if unsafe_archive_name(item.name):
                     add(findings, root, "AST02-ARCHIVE-TRAVERSAL", "CRITICAL", "Supply Chain", path, 0,
