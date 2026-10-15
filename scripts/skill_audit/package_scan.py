@@ -143,7 +143,7 @@ def validate_structure(root: Path, findings: list[Finding]) -> dict[str, Any]:
             if len(description) > 1024:
                 add(findings, root, "ROUTING-DESCRIPTION-LONG", "MEDIUM", "Routing", skill, 1,
                     f"Description length: {len(description)}", "Keep description at or below 1024 characters.")
-            if not re.search(r"(?i)\b(use when|use for|when the user|trigger|audit|review|build|create|analy[sz]e)\b", description):
+            if not re.search(r"(?i)\b(use when|use for|when the user|when(?:ever)?\s+asked|trigger|audit|review|build|create|analy[sz]e)\b", description):
                 add(findings, root, "ROUTING-TRIGGER-MISSING", "MEDIUM", "Routing", skill, 1,
                     description, "Add explicit activation language.")
             if not re.search(r"(?i)\b(do not use|not for|exclude|when not|avoid when)\b", body):
@@ -156,7 +156,8 @@ def validate_structure(root: Path, findings: list[Finding]) -> dict[str, Any]:
         if len(text.splitlines()) > 500:
             add(findings, root, "EFFICIENCY-SKILL-LONG", "MEDIUM", "Efficiency", skill, 1,
                 f"SKILL.md has {len(text.splitlines())} lines.", "Move detail into references.")
-        if not re.search(r"(?i)\b(workflow|steps|procedure|process)\b", body):
+        numbered_steps = re.findall(r"(?m)^[ \t]{0,3}[0-9]{1,9}[.)][ \t]+\S", body)
+        if not re.search(r"(?i)\b(workflow|steps|procedure|process)\b", body) and len(numbered_steps) < 2:
             add(findings, root, "QUALITY-WORKFLOW-MISSING", "MEDIUM", "Quality", skill, 1,
                 "No ordered workflow found.", "Add a concise workflow.")
         if not re.search(r"(?i)\b(test|verify|validate|check|evidence)\b", body):

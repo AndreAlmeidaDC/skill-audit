@@ -35,6 +35,43 @@ def run_audit(root: Path, *extra: str) -> tuple[subprocess.CompletedProcess[str]
 
 
 class SkillAuditV3Tests(unittest.TestCase):
+    def test_markdown_numbered_instructions_are_a_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "sample-skill"
+            root.mkdir()
+            write_skill(root, "## How to use\n1. **Choose** the format.\n2. **Read** the matching reference.\n3. **Draft** the response.\n")
+            _, report = run_audit(root)
+            ids = {f["id"] for f in report["findings"]}
+            self.assertNotIn("QUALITY-WORKFLOW-MISSING", ids)
+            self.assertIn("QUALITY-VERIFICATION-MISSING", ids)
+
+    def test_explicit_when_asked_trigger_is_recognized(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "sample-skill"
+            root.mkdir()
+            write_skill(root)
+            path = root / "SKILL.md"
+            text = path.read_text(encoding="utf-8")
+            old = "Review a sample package. Use when auditing a local test skill."
+            for trigger in ("Use this skill whenever asked for a status note.", "Use this skill when the user asks for a status note."):
+                with self.subTest(trigger=trigger):
+                    path.write_text(text.replace(old, trigger), encoding="utf-8")
+                    _, report = run_audit(root)
+                    self.assertNotIn("ROUTING-TRIGGER-MISSING", {f["id"] for f in report["findings"]})
+
+    def test_missing_trigger_and_workflow_remain_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "sample-skill"
+            root.mkdir()
+            write_skill(root, "A collection of formats.\n1. A single item.\n")
+            path = root / "SKILL.md"
+            path.write_text(path.read_text(encoding="utf-8").replace(
+                "Review a sample package. Use when auditing a local test skill.", "A collection of formats."), encoding="utf-8")
+            _, report = run_audit(root)
+            ids = {f["id"] for f in report["findings"]}
+            self.assertIn("ROUTING-TRIGGER-MISSING", ids)
+            self.assertIn("QUALITY-WORKFLOW-MISSING", ids)
+
     def test_build_and_hidden_payload_are_scanned_and_hashed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "sample-skill"
