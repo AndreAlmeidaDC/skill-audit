@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from . import VERSION
-from .model import Finding, SEVERITIES, SEVERITY_RANK, file_hash, rel
-from .package_scan import iter_files
+from .model import Finding, SEVERITIES, SEVERITY_RANK
 
 SARIF_LEVEL = {"CRITICAL": "error", "HIGH": "error", "MEDIUM": "warning", "LOW": "note", "INFO": "note"}
 
@@ -32,10 +31,13 @@ def posture(findings: list[Finding]) -> int:
     return max(0, 100 - min(100, sum(weights[f.severity] for f in findings if f.status == "open")))
 
 
-def build_report(root: Path, findings: list[Finding], structure: dict[str, Any], capabilities: dict[str, Any], chains: list[dict[str, Any]]) -> dict[str, Any]:
+def build_report(root: Path, findings: list[Finding], structure: dict[str, Any], capabilities: dict[str, Any], chains: list[dict[str, Any]], coverage: dict[str, Any] | None = None) -> dict[str, Any]:
+    if coverage is None:
+        from .coverage import collect_coverage
+        coverage = collect_coverage(root)
     ordered = sorted(findings, key=lambda f: (f.status != "open", -SEVERITY_RANK[f.severity], f.category, f.file, f.line, f.id))
     return {
-        "schema_version": "3.0", "auditor_version": VERSION,
+        "schema_version": "3.1", "auditor_version": VERSION,
         "audited_path": str(root.resolve()),
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
         "decision_basis": "highest credible open severity and attack chains; posture score is secondary",
@@ -43,7 +45,8 @@ def build_report(root: Path, findings: list[Finding], structure: dict[str, Any],
         "severity_counts": counts(ordered), "structure": structure,
         "capabilities": capabilities, "attack_chains": chains,
         "findings": [f.to_dict() for f in ordered],
-        "file_hashes_sha256": {rel(p, root): file_hash(p) for p in iter_files(root) if p.is_file() and not p.is_symlink()},
+        "file_hashes_sha256": coverage["file_hashes_sha256"],
+        "coverage": {k: v for k, v in coverage.items() if k != "file_hashes_sha256"},
         "limitations": [
             "Static analysis does not prove runtime safety or benign intent.",
             "Novel obfuscation, transitive behavior, generated code and host-specific semantics can evade checks.",
@@ -55,7 +58,10 @@ def build_report(root: Path, findings: list[Finding], structure: dict[str, Any],
 def markdown(report: dict[str, Any]) -> str:
     lines = ["# Skill Audit Report", "", f"**Risk rating:** **{report['risk_rating']}**  ",
              f"**Posture score:** {report['posture_score']}/100 (secondary)  ",
-             f"**Audited path:** `{report['audited_path']}`", "", "## Severity", "",
+             f"**Audited path:** `{report['audited_path']}`", "",
+             f"**Static coverage complete:** {report['coverage']['complete']}", "",
+             "## Unexamined content", "",
+             *[f"- `{x['path']}`: {x['reason']}" for x in report['coverage']['unexamined']], "", "## Severity", "",
              "| Severity | Open |", "|---|---:|"]
     lines.extend(f"| {name} | {report['severity_counts'][name]} |" for name in SEVERITIES)
     lines.extend(["", "## Attack chains", ""])

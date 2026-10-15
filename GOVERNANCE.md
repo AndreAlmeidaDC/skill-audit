@@ -18,6 +18,8 @@ Changes to detection, severity, suppression, capability mapping, attack chains o
 
 Suppressions live outside the audited target, identify an approver and reason, expire, remain visible, and cannot apply to critical findings.
 
+Coverage gaps cannot be suppressed. An exception does not cause unexamined bytes to become examined; resolve the gap in a separately bounded stage and re-audit the exact distribution snapshot. Coverage completeness is distinct from semantic, functional and security approval.
+
 ## Update policy
 
 The skill may check its canonical public repository for a newer version. It never executes remote update code, self-updates silently or overwrites local changes without consent.

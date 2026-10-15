@@ -2,7 +2,7 @@
   "name": "skill-audit",
   "title": "Skill Audit",
   "description": "Static and procedural audit toolkit for Agent Skills, including package integrity, instruction security, capabilities, attack chains, supply chain, routing, governance, SARIF and sandbox planning.",
-  "version": "2026.09.02",
+  "version": "2026.10.15",
   "maturity": "beta",
   "origin_url": "https://github.com/AndreAlmeidaDC/skill-audit",
   "origin_git_url": "https://github.com/AndreAlmeidaDC/skill-audit.git",
@@ -31,7 +31,7 @@
     "critical_suppression_allowed": false
   },
   "outputs": ["json", "markdown", "sarif", "sandbox-plan"],
-  "last_standardized_at": "2026-09-02 GMT-3",
+  "last_standardized_at": "2026-10-15 GMT-3",
   "update_policy": {
     "check_upstream_on_meaningful_use": true,
     "requires_user_consent": true,

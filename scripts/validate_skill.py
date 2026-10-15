@@ -12,7 +12,7 @@ REQUIRED = [
     "references/reviewer-guide.md", "scripts/audit_skill.py",
     "scripts/test_audit_skill.py", "scripts/skill_audit/__init__.py",
     "scripts/skill_audit/model.py", "scripts/skill_audit/package_scan.py",
-    "scripts/skill_audit/security_scan.py", "scripts/skill_audit/reporting.py", "scripts/skill_audit/cli.py",
+    "scripts/skill_audit/security_scan.py", "scripts/skill_audit/reporting.py", "scripts/skill_audit/cli.py", "scripts/skill_audit/coverage.py",
 ]
 
 def fail(message: str) -> None:
@@ -24,7 +24,7 @@ if missing:
     fail("missing files: " + ", ".join(missing))
 metadata = json.loads((ROOT / "metadata.json").read_text(encoding="utf-8"))
 skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-if metadata.get("version") != "2026.09.02" or "2026.09.02" not in skill:
+if metadata.get("version") != "2026.10.15" or "2026.10.15" not in skill:
     fail("version drift")
 if metadata.get("security_model", {}).get("target_suppression_markers_allowed") is not False:
     fail("target suppression markers must be disabled")
