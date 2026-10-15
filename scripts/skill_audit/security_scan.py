@@ -17,8 +17,6 @@ def scan_text(root: Path, findings: list[Finding], observed: dict[str, list[dict
     for path in iter_files(root):
         if path.is_symlink() or not path.is_file():
             continue
-        if path.suffix.lower() not in TEXT_EXTENSIONS and path.name not in {"Dockerfile", "Makefile", "requirements.txt", "package.json"}:
-            continue
         text = safe_text(path)
         if text is None:
             continue
@@ -29,7 +27,7 @@ def scan_text(root: Path, findings: list[Finding], observed: dict[str, list[dict
             if any(char in line for char in ZERO_WIDTH):
                 add(findings, root, "AST01-UNICODE-ZERO-WIDTH", "MEDIUM", "Instruction Security", path, number,
                     repr(line), "Remove invisible characters.")
-            if re.search(r"[A-Za-z].*[\u0400-\u04FF]|[\u0400-\u04FF].*[A-Za-z]", line):
+            if re.search(r"[A-Za-z]", line) and re.search(r"[\u0400-\u04FF]", line):
                 add(findings, root, "AST04-MIXED-SCRIPT", "MEDIUM", "Metadata", path, number,
                     line, "Review mixed Latin/Cyrillic text for homoglyph impersonation.", "medium")
             for rule, severity, category, regex, recommendation in COMPILED:
@@ -233,7 +231,7 @@ def load_suppressions(path: Optional[Path], root: Path) -> list[dict[str, Any]]:
 
 def apply_suppressions(findings: list[Finding], suppressions: list[dict[str, Any]]) -> None:
     for finding in findings:
-        if finding.severity == "CRITICAL":
+        if finding.severity == "CRITICAL" or finding.category == "Coverage":
             continue
         for item in suppressions:
             if item["rule"] == finding.id and fnmatch.fnmatch(finding.file, str(item["path"])):

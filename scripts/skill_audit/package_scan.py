@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from .model import Finding, add, rel
+from .coverage import MAX_PATHS, MAX_TEXT_BYTES, MAX_LINE_CHARS, is_link
 
 TEXT_EXTENSIONS = {
     ".md", ".txt", ".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts",
     ".tsx", ".jsx", ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".cfg",
     ".env", ".html", ".css", ".scss", ".sql", ".xml", ".csv", ".lock", "",
 }
-SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".next", "coverage"}
+SKIP_DIRS = {".git"}  # Explicitly reported as unexamined repository metadata.
 BIDI = {chr(x) for x in [0x202A, 0x202B, 0x202D, 0x202E, 0x202C, 0x2066, 0x2067, 0x2068, 0x2069]}
 ZERO_WIDTH = {"\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"}
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -46,11 +47,16 @@ COMPILED = [(a, b, c, re.compile(d), e) for a, b, c, d, e in PATTERNS]
 
 
 def iter_paths(root: Path) -> Iterable[Path]:
+    count = 0
     for current, dirs, files in os.walk(root, followlinks=False):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         base = Path(current)
         for name in dirs + files:
+            count += 1
+            if count > MAX_PATHS:
+                raise ValueError("Audit path count limit exceeded.")
             yield base / name
+        dirs[:] = [d for d in dirs if not is_link(base / d)]
 
 
 def iter_files(root: Path) -> Iterable[Path]:
@@ -59,18 +65,23 @@ def iter_files(root: Path) -> Iterable[Path]:
             yield path
 
 
-def safe_text(path: Path, limit: int = 2_000_000) -> Optional[str]:
+def safe_text(path: Path, limit: int = MAX_TEXT_BYTES) -> Optional[str]:
     try:
-        if path.is_symlink() or path.stat().st_size > limit:
+        if is_link(path) or not path.is_file() or path.stat().st_nlink != 1 or path.stat().st_size > limit:
             return None
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+        with path.open("rb") as handle:
+            data = handle.read(limit + 1)
+        if len(data) > limit or b"\x00" in data:
+            return None
+        text = data.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+        return text if all(len(line) <= MAX_LINE_CHARS for line in text.splitlines()) else None
+    except (OSError, UnicodeDecodeError):
         return None
 
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(safe_text(path) or "")
         return value if isinstance(value, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
@@ -166,7 +177,7 @@ def validate_structure(root: Path, findings: list[Finding]) -> dict[str, Any]:
 def scan_filesystem(root: Path, findings: list[Finding]) -> None:
     resolved = root.resolve()
     for path in iter_paths(root):
-        if path.is_symlink():
+        if is_link(path):
             try:
                 target = path.resolve(strict=False)
                 outside = os.path.commonpath([str(resolved), str(target)]) != str(resolved)
@@ -178,6 +189,8 @@ def scan_filesystem(root: Path, findings: list[Finding]) -> None:
             continue
         if not path.is_file():
             continue
+        if path.stat().st_nlink != 1:
+            continue
         size = path.stat().st_size
         if size > 5_000_000:
             add(findings, root, "AST02-LARGE-FILE", "MEDIUM", "Package Integrity", path, 0,
@@ -187,7 +200,8 @@ def scan_filesystem(root: Path, findings: list[Finding]) -> None:
         elif path.suffix.lower() in {".tar", ".tgz", ".gz", ".bz2", ".xz"}:
             scan_tar(root, path, findings)
         elif path.suffix.lower() not in TEXT_EXTENSIONS and size:
-            sample = path.read_bytes()[:8192]
+            with path.open("rb") as handle:
+                sample = handle.read(8192)
             if b"\x00" in sample:
                 add(findings, root, "AST02-OPAQUE-BINARY", "MEDIUM", "Package Integrity", path, 0,
                     "Opaque binary file included.", "Verify provenance and signatures independently.")
@@ -199,10 +213,18 @@ def unsafe_archive_name(name: str) -> bool:
 
 
 def scan_zip(root: Path, path: Path, findings: list[Finding]) -> None:
+    if path.stat().st_size > MAX_TEXT_BYTES:
+        add(findings, root, "AST02-ARCHIVE-METADATA-LIMIT", "HIGH", "Coverage", path, 0,
+            "Archive exceeds bounded metadata inspection size.", "Inspect in a separately bounded archive stage.")
+        return
     try:
         with zipfile.ZipFile(path) as archive:
             total = 0
-            for item in archive.infolist():
+            for index, item in enumerate(archive.infolist()):
+                if index >= MAX_PATHS:
+                    add(findings, root, "AST02-ARCHIVE-MEMBER-LIMIT", "HIGH", "Coverage", path, 0,
+                        "Archive member limit exceeded.", "Inspect in a separately bounded archive stage.")
+                    break
                 total += item.file_size
                 if unsafe_archive_name(item.filename):
                     add(findings, root, "AST02-ARCHIVE-TRAVERSAL", "CRITICAL", "Supply Chain", path, 0,
@@ -220,9 +242,17 @@ def scan_zip(root: Path, path: Path, findings: list[Finding]) -> None:
 
 
 def scan_tar(root: Path, path: Path, findings: list[Finding]) -> None:
+    if path.suffix.lower() != ".tar":
+        add(findings, root, "AST02-ARCHIVE-COMPRESSED-UNEXAMINED", "HIGH", "Coverage", path, 0,
+            "Compressed archive is not decompressed by the static scanner.", "Inspect in a separately bounded archive stage.")
+        return
     try:
-        with tarfile.open(path, "r:*") as archive:
-            for item in archive.getmembers():
+        with tarfile.open(path, "r:") as archive:
+            for index, item in enumerate(archive):
+                if index >= MAX_PATHS:
+                    add(findings, root, "AST02-ARCHIVE-MEMBER-LIMIT", "HIGH", "Coverage", path, 0,
+                        "Archive member limit exceeded.", "Inspect in a separately bounded archive stage.")
+                    break
                 if unsafe_archive_name(item.name):
                     add(findings, root, "AST02-ARCHIVE-TRAVERSAL", "CRITICAL", "Supply Chain", path, 0,
                         item.name, "Reject path-traversing archives.")

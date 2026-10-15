@@ -39,6 +39,8 @@ python3 scripts/audit_skill.py /path/to/skill \
 
 Use `--strict` in CI to fail on open `HIGH` or `CRITICAL` findings.
 
+Engine 3.1.0 / package 2026.10.15 adds explicit bounded coverage. Always inspect `coverage.complete` and `coverage.unexamined` before admission. Exit 2 indicates incomplete coverage or invalid input, regardless of `--strict`; it is not a clean scan. Build output, hidden files and UTF-8 files with unknown extensions are inspected. Archives, binaries, oversized/long-line files, links and unreadable content remain unexamined and require a separate review. `.git` is excluded as repository metadata and is explicitly reported as incomplete; audit a clean distribution snapshot for package admission. Reports must be outside the target. Coverage findings cannot be suppressed. Keep an external process timeout and an isolated, quiescent input tree; input limits are not a runtime sandbox.
+
 ## Suppressions
 
 Suppressions are optional reviewed exceptions. They must be stored in a JSON file outside the audited package and include `rule`, `path`, `reason`, `approved_by` and `expires_at`. Critical findings cannot be suppressed. Suppressed findings remain visible in the report.

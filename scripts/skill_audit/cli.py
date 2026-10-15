@@ -5,7 +5,8 @@ import json
 import sys
 from pathlib import Path
 
-from .model import Finding
+from .model import Finding, add
+from .coverage import collect_coverage, is_link
 from .reporting import build_report, markdown, sandbox_plan, sarif
 from .package_scan import scan_filesystem, validate_structure
 from .security_scan import (apply_suppressions, detect_attack_chains, load_suppressions,
@@ -23,10 +24,18 @@ def main() -> int:
     parser.add_argument("--strict", action="store_true", help="Exit 1 for HIGH or CRITICAL open findings")
     args = parser.parse_args()
 
-    root = Path(args.skill_path).expanduser().resolve()
+    supplied = Path(args.skill_path).expanduser()
+    if is_link(supplied):
+        print("ERROR: audit root must not be a link", file=sys.stderr)
+        return 2
+    root = supplied.resolve()
     if not root.is_dir():
         print(f"ERROR: skill_path must be an existing directory: {root}", file=sys.stderr)
         return 2
+    for output in (args.json_path, args.markdown_path, args.sarif_path, args.sandbox_path):
+        if output and Path(output).expanduser().resolve().is_relative_to(root):
+            print("ERROR: report outputs must be outside the audited target", file=sys.stderr)
+            return 2
     try:
         suppressions = load_suppressions(Path(args.suppressions_path) if args.suppressions_path else None, root)
     except ValueError as exc:
@@ -35,13 +44,23 @@ def main() -> int:
 
     findings: list[Finding] = []
     observed: dict[str, list[dict]] = {}
-    structure = validate_structure(root, findings)
-    scan_filesystem(root, findings)
-    scan_text(root, findings, observed)
-    capabilities = reconcile_capabilities(root, findings, observed)
+    coverage = collect_coverage(root)
+    structure, capabilities = {}, {}
+    if not coverage["abort_scan"]:
+        structure = validate_structure(root, findings)
+        scan_filesystem(root, findings)
+        scan_text(root, findings, observed)
+        capabilities = reconcile_capabilities(root, findings, observed)
+        after = collect_coverage(root)
+        if after["file_hashes_sha256"] != coverage["file_hashes_sha256"] or after["unexamined"] != coverage["unexamined"]:
+            coverage["complete"] = False
+            coverage["unexamined"].append({"path": "<package>", "reason": "target_changed_during_scan"})
+    for gap in coverage["unexamined"]:
+        add(findings, root, "COVERAGE-INCOMPLETE", "HIGH", "Coverage", gap["path"], 0,
+            gap["reason"], "Review omitted content separately; do not admit this package as completely scanned.")
     chains = detect_attack_chains(root, findings)
     apply_suppressions(findings, suppressions)
-    report = build_report(root, findings, structure, capabilities, chains)
+    report = build_report(root, findings, structure, capabilities, chains, coverage)
 
     if args.json_path:
         Path(args.json_path).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -55,4 +74,6 @@ def main() -> int:
     print(json.dumps({"risk_rating": report["risk_rating"], "posture_score": report["posture_score"],
                       "severity_counts": report["severity_counts"], "attack_chains": len(chains),
                       "findings": len(report["findings"])}, indent=2))
+    if not coverage["complete"]:
+        return 2
     return 1 if args.strict and report["risk_rating"] in {"HIGH", "CRITICAL"} else 0
